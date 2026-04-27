@@ -685,8 +685,17 @@ void cdch_close(uint8_t daddr) {
 }
 
 bool cdch_xfer_cb(uint8_t daddr, uint8_t ep_addr, xfer_result_t event, uint32_t xferred_bytes) {
-  // TODO handle stall response, retry failed transfer ...
-  TU_VERIFY(event == XFER_RESULT_SUCCESS);
+  // On Bulk IN failure, re-queue the transfer so the RX endpoint is not permanently
+  // abandoned.  STALL would need CLEAR_FEATURE first (TODO), but transient errors
+  // (CRC, babble, device-side glitch) are recovered by simply retrying.
+  if (event != XFER_RESULT_SUCCESS) {
+    uint8_t const idx = get_idx_by_ep_addr(daddr, ep_addr);
+    cdch_interface_t *p_cdc = get_itf(idx);
+    if (p_cdc && ep_addr == p_cdc->stream.rx.ep_addr) {
+      tu_edpt_stream_read_xfer(&p_cdc->stream.rx);
+    }
+    return false;
+  }
 
   uint8_t const idx = get_idx_by_ep_addr(daddr, ep_addr);
   cdch_interface_t *p_cdc = get_itf(idx);
